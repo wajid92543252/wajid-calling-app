@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Wajid Calling App - Dubai to Pakistan FREE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/socket.io/socket.io.js"></script>
+<style>
+body{font-family:Arial;text-align:center;background:#0d1117;color:white;padding:20px}
+input,button{padding:12px;margin:5px;border-radius:8px;border:none;font-size:16px}
+input{width:200px}
+button{background:#238636;color:white;cursor:pointer;font-weight:bold}
+#videos{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:20px}
+video{width:300px;height:225px;background:black;border-radius:10px;border:2px solid #30363d}
+h1{color:#58a6ff}
+</style>
+</head>
+<body>
+<h1>🇵🇰 Wajid Calling App 🇦🇪</h1>
+<h3>Dubai to Pakistan FREE Video Call</h3>
+<input id="roomId" placeholder="Room Code Likho - jaise 1234">
+<br>
+<button onclick="joinRoom()">Join / Call Start Karo</button>
+<p id="status">Room code likh kar Join dabao</p>
+<div id="videos">
+<video id="myVideo" autoplay muted playsinline></video>
+<video id="otherVideo" autoplay playsinline></video>
+</div>
+<script>
+const socket = io();
+let myStream, peer;
+let roomIdGlobal;
+async function joinRoom(){
+  const roomId = document.getElementById('roomId').value;
+  if(!roomId){alert('Room code likho bhai!');return;}
+  roomIdGlobal = roomId;
+  document.getElementById('status').innerText = 'Camera on ho raha hai...';
+  myStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+  document.getElementById('myVideo').srcObject = myStream;
+  socket.emit('join-room', roomId);
+  document.getElementById('status').innerText = 'Room: '+roomId+' - Dusre bande ka intezar hai... Link share karo!';
+}
+socket.on('user-connected', async (userId)=>{
+  document.getElementById('status').innerText = 'Banda mil gaya! Call connect ho rahi hai...';
+  createPeer(userId, true);
+});
+socket.on('signal', async (data)=>{
+  if(!peer) createPeer(data.from, false);
+  peer.signal(data.signal);
+});
+function createPeer(to, initiator){
+  const SimplePeer = window.SimplePeer;
+  if(peer) peer.destroy();
+  // Using simple implementation without SimplePeer lib - using native
+  peer = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
+  myStream.getTracks().forEach(track=>peer.addTrack(track, myStream));
+  peer.ontrack = e=>{document.getElementById('otherVideo').srcObject = e.streams[0]; document.getElementById('status').innerText='CALL CONNECTED! Baat karo!';}
+  peer.onicecandidate = e=>{
+    if(e.candidate) return;
+    socket.emit('signal',{to, signal: peer.localDescription});
+  };
+  peer.onnegotiationneeded = async ()=>{
+    const offer = await peer.createOffer();
+    await peer.setLocalDescription(offer);
+    socket.emit('signal',{to, signal: peer.localDescription});
+  };
+  peer.signal = async (signal)=>{
+    if(signal.type==='offer'){
+      await peer.setRemoteDescription(signal);
+      const answer = await peer.createAnswer();
+      await peer.setLocalDescription(answer);
+      socket.emit('signal',{to, signal: peer.localDescription});
+    }else if(signal.type==='answer'){
+      await peer.setRemoteDescription(signal);
+    }
+  };
+  if(initiator){
+    // initiator will trigger negotiationneeded
+  }
+}
+// Fallback simple peer handling
+RTCPeerConnection.prototype._signal = RTCPeerConnection.prototype.signal;
+socket.on('user-disconnected', ()=>{document.getElementById('status').innerText='Banda chala gaya';});
+</script>
+<script src="https://unpkg.com/simple-peer@9.4.0/simplepeer.min.js"></script>
+<script>
+// Override with SimplePeer for better compatibility
+function createPeer(to, isInitiator){
+  const p = new SimplePeer({initiator:isInitiator, trickle:false, stream:myStream});
+  p.on('signal', signal=>{socket.emit('signal',{to, signal})});
+  p.on('stream', stream=>{document.getElementById('otherVideo').srcObject=stream; document.getElementById('status').innerText='CALL CONNECTED! MashAllah!';});
+  p.on('connect', ()=>{console.log('connected')});
+  peer = p;
+  peer.signal = (s)=>{p.signal(s)};
+}
+</script>
+</body>
+</html>
