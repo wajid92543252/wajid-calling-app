@@ -1,97 +1,73 @@
 <!DOCTYPE html>
 <html>
 <head>
-<title>Wajid Calling App - Dubai to Pakistan FREE</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="/socket.io/socket.io.js"></script>
-<style>
-body{font-family:Arial;text-align:center;background:#0d1117;color:white;padding:20px}
-input,button{padding:12px;margin:5px;border-radius:8px;border:none;font-size:16px}
-input{width:200px}
-button{background:#238636;color:white;cursor:pointer;font-weight:bold}
-#videos{display:flex;flex-wrap:wrap;justify-content:center;gap:10px;margin-top:20px}
-video{width:300px;height:225px;background:black;border-radius:10px;border:2px solid #30363d}
-h1{color:#58a6ff}
-</style>
+  <title>Wajid Calling App - Dubai to Pakistan</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    body { font-family: sans-serif; text-align: center; background: #f0f0f0; }
+    video { width: 45%; border: 2px solid #25D366; border-radius: 10px; margin: 5px; background: black; }
+    button { padding: 12px 25px; font-size: 18px; background: #25D366; color: white; border: none; border-radius: 25px; margin: 10px; }
+    input { padding: 10px; font-size: 16px; border-radius: 10px; border: 1px solid gray; }
+  </style>
 </head>
 <body>
-<h1>🇵🇰 Wajid Calling App 🇦🇪</h1>
-<h3>Dubai to Pakistan FREE Video Call</h3>
-<input id="roomId" placeholder="Room Code Likho - jaise 1234">
-<br>
-<button onclick="joinRoom()">Join / Call Start Karo</button>
-<p id="status">Room code likh kar Join dabao</p>
-<div id="videos">
-<video id="myVideo" autoplay muted playsinline></video>
-<video id="otherVideo" autoplay playsinline></video>
-</div>
+  <h2>Wajid Calling App 📞</h2>
+  <p>Dubai se Pakistan FREE Calling</p>
+  <input id="roomId" placeholder="Room ID likho (jaise 123)" />
+  <button onclick="joinRoom()">Call Join Karo</button>
+  <br><br>
+  <video id="myVideo" autoplay muted playsinline></video>
+  <video id="remoteVideo" autoplay playsinline></video>
+
 <script>
-const socket = io();
-let myStream, peer;
-let roomIdGlobal;
-async function joinRoom(){
-  const roomId = document.getElementById('roomId').value;
-  if(!roomId){alert('Room code likho bhai!');return;}
-  roomIdGlobal = roomId;
-  document.getElementById('status').innerText = 'Camera on ho raha hai...';
-  myStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-  document.getElementById('myVideo').srcObject = myStream;
-  socket.emit('join-room', roomId);
-  document.getElementById('status').innerText = 'Room: '+roomId+' - Dusre bande ka intezar hai... Link share karo!';
-}
-socket.on('user-connected', async (userId)=>{
-  document.getElementById('status').innerText = 'Banda mil gaya! Call connect ho rahi hai...';
-  createPeer(userId, true);
-});
-socket.on('signal', async (data)=>{
-  if(!peer) createPeer(data.from, false);
-  peer.signal(data.signal);
-});
-function createPeer(to, initiator){
-  const SimplePeer = window.SimplePeer;
-  if(peer) peer.destroy();
-  // Using simple implementation without SimplePeer lib - using native
-  peer = new RTCPeerConnection({iceServers:[{urls:'stun:stun.l.google.com:19302'}]});
-  myStream.getTracks().forEach(track=>peer.addTrack(track, myStream));
-  peer.ontrack = e=>{document.getElementById('otherVideo').srcObject = e.streams[0]; document.getElementById('status').innerText='CALL CONNECTED! Baat karo!';}
-  peer.onicecandidate = e=>{
-    if(e.candidate) return;
-    socket.emit('signal',{to, signal: peer.localDescription});
+  const socket = io();
+  let localStream;
+  let peerConnection;
+  const config = {
+    iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
   };
-  peer.onnegotiationneeded = async ()=>{
-    const offer = await peer.createOffer();
-    await peer.setLocalDescription(offer);
-    socket.emit('signal',{to, signal: peer.localDescription});
-  };
-  peer.signal = async (signal)=>{
-    if(signal.type==='offer'){
-      await peer.setRemoteDescription(signal);
-      const answer = await peer.createAnswer();
-      await peer.setLocalDescription(answer);
-      socket.emit('signal',{to, signal: peer.localDescription});
-    }else if(signal.type==='answer'){
-      await peer.setRemoteDescription(signal);
-    }
-  };
-  if(initiator){
-    // initiator will trigger negotiationneeded
+
+  async function joinRoom() {
+    const roomId = document.getElementById('roomId').value;
+    if(!roomId) return alert('Room ID likho!');
+
+    localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    document.getElementById('myVideo').srcObject = localStream;
+
+    socket.emit('join-room', roomId);
+
+    peerConnection = new RTCPeerConnection(config);
+    localStream.getTracks().forEach(track => peerConnection.addTrack(track, localStream));
+
+    peerConnection.onicecandidate = e => {
+      if(e.candidate) socket.emit('ice-candidate', { candidate: e.candidate, roomId });
+    };
+    peerConnection.ontrack = e => {
+      document.getElementById('remoteVideo').srcObject = e.streams[0];
+    };
+
+    socket.on('user-connected', async () => {
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+      socket.emit('offer', { offer, roomId });
+    });
+
+    socket.on('offer', async data => {
+      await peerConnection.setRemoteDescription(data.offer);
+      const answer = await peerConnection.createAnswer();
+      await peerConnection.setLocalDescription(answer);
+      socket.emit('answer', { answer, roomId });
+    });
+
+    socket.on('answer', async data => {
+      await peerConnection.setRemoteDescription(data.answer);
+    });
+
+    socket.on('ice-candidate', async data => {
+      await peerConnection.addIceCandidate(data.candidate);
+    });
   }
-}
-// Fallback simple peer handling
-RTCPeerConnection.prototype._signal = RTCPeerConnection.prototype.signal;
-socket.on('user-disconnected', ()=>{document.getElementById('status').innerText='Banda chala gaya';});
-</script>
-<script src="https://unpkg.com/simple-peer@9.4.0/simplepeer.min.js"></script>
-<script>
-// Override with SimplePeer for better compatibility
-function createPeer(to, isInitiator){
-  const p = new SimplePeer({initiator:isInitiator, trickle:false, stream:myStream});
-  p.on('signal', signal=>{socket.emit('signal',{to, signal})});
-  p.on('stream', stream=>{document.getElementById('otherVideo').srcObject=stream; document.getElementById('status').innerText='CALL CONNECTED! MashAllah!';});
-  p.on('connect', ()=>{console.log('connected')});
-  peer = p;
-  peer.signal = (s)=>{p.signal(s)};
-}
 </script>
 </body>
 </html>
