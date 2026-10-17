@@ -1,15 +1,14 @@
-
-  socket=io();
+socket=io();
   socket.on('user-connected', async ()=>{
-    let offer=await pc.createOffer(); await pc.setLocalDescription(offer);
-    socket.emit('offer',{offer,roomId:document.getElementById('room').value});
+    if(!pc) return;
+    try{ let offer=await pc.createOffer(); await pc.setLocalDescription(offer); socket.emit('offer',{offer,roomId:document.getElementById('room').value}); }catch(e){}
   });
-  socket.on('offer', async d=>{ await pc.setRemoteDescription(d.offer); let ans=await pc.createAnswer(); await pc.setLocalDescription(ans); socket.emit('answer',{answer:ans,roomId:d.roomId}); });
-  socket.on('answer', async d=>{ await pc.setRemoteDescription(d.answer); });
+  socket.on('offer', async d=>{ if(!pc) return; try{ await pc.setRemoteDescription(d.offer); let ans=await pc.createAnswer(); await pc.setLocalDescription(ans); socket.emit('answer',{answer:ans,roomId:d.roomId}); }catch(e){} });
+  socket.on('answer', async d=>{ if(!pc) return; try{ if(pc.signalingState==='have-local-offer') await pc.setRemoteDescription(d.answer); }catch(e){} });
   socket.on('ice-candidate', async d=>{ try{await pc.addIceCandidate(d.candidate)}catch(e){} });
   socket.on('incoming-call', d=>{ incomingRoom=d.roomId; document.getElementById('callerText').innerText='Room: '+d.roomId; document.getElementById('incoming').style.display='flex'; });
   socket.on('call-rejected', ()=>{ alert('Call Rejected'); endCall(); });
   socket.on('call-ended', ()=>{ endCall(); });
   socket.on('chat-message', d=>{ chatBox.innerHTML+=`<div class="msg">${d.text}</div><div style="clear:both"></div>`; chatBox.scrollTop=chatBox.scrollHeight; });
   socket.on('file-share', d=>{ if(d.type.startsWith('image')) chatBox.innerHTML+=`<div class="msg"><img src="${d.data}" style="max-width:140px;border-radius:10px"><br><a href="${d.data}" download="${d.name}" style="color:#25D366">Download</a></div><div style="clear:both"></div>`; else chatBox.innerHTML+=`<div class="msg">📁 ${d.name}<br><a href="${d.data}" download="${d.name}" style="color:#25D366">Download</a></div><div style="clear:both"></div>`; chatBox.scrollTop=chatBox.scrollHeight; });
-  socket.on('voice-mes
+  socket.on('voice-message', d=>{ chatBox.innerHTML+=`<div class="msg"><audio controls src="${d.data}"></audio></div><div style="clear:both"></div>`; chatBox.scrollTop=chatBox.scrollHeight; });
