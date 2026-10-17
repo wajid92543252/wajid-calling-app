@@ -98,7 +98,7 @@ if(localStorage.getItem('wajid_name')){
 document.getElementById('loginBox').style.display = 'none';
 document.getElementById('mainApp').style.display = 'block';
 }
-const servers = {iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},{urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"}]};
+const servers = {iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},{urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"},{urls:"turns:openrelay.metered.ca:443?transport=tcp",username:"openrelayproject",credential:"openrelayproject"}]};
 async function createPC(room){
 if(pc) return pc;
 pc = new RTCPeerConnection(servers);
@@ -115,9 +115,6 @@ document.getElementById('callStatus').innerText = "Calling...";
 socket.emit('join-room', currentRoom);
 socket.emit('call-user', {roomId:currentRoom, from:myName});
 await createPC(currentRoom);
-let offer = await pc.createOffer();
-await pc.setLocalDescription(offer);
-socket.emit('offer', {roomId:currentRoom, offer:offer});
 }
 function acceptCall(){
 currentRoom = incomingRoom;
@@ -185,7 +182,7 @@ let offer = await pc.createOffer();
 await pc.setLocalDescription(offer);
 socket.emit('offer', {roomId:roomId, offer:offer});
 } catch(e){ console.log(e); }
-});
+}); 
 socket.on('offer', async d => {
 if(!pc) await createPC(d.roomId);
 try{ await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
