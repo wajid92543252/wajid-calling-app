@@ -1,14 +1,224 @@
-socket=io();
-  socket.on('user-connected', async ()=>{
-    if(!pc) return;
-    try{ let offer=await pc.createOffer(); await pc.setLocalDescription(offer); socket.emit('offer',{offer,roomId:document.getElementById('room').value}); }catch(e){}
-  });
-  socket.on('offer', async d=>{ if(!pc) return; try{ await pc.setRemoteDescription(d.offer); let ans=await pc.createAnswer(); await pc.setLocalDescription(ans); socket.emit('answer',{answer:ans,roomId:d.roomId}); }catch(e){} });
-  socket.on('answer', async d=>{ if(!pc) return; try{ if(pc.signalingState==='have-local-offer') await pc.setRemoteDescription(d.answer); }catch(e){} });
-  socket.on('ice-candidate', async d=>{ try{await pc.addIceCandidate(d.candidate)}catch(e){} });
-  socket.on('incoming-call', d=>{ incomingRoom=d.roomId; document.getElementById('callerText').innerText='Room: '+d.roomId; document.getElementById('incoming').style.display='flex'; });
-  socket.on('call-rejected', ()=>{ alert('Call Rejected'); endCall(); });
-  socket.on('call-ended', ()=>{ endCall(); });
-  socket.on('chat-message', d=>{ chatBox.innerHTML+=`<div class="msg">${d.text}</div><div style="clear:both"></div>`; chatBox.scrollTop=chatBox.scrollHeight; });
-  socket.on('file-share', d=>{ if(d.type.startsWith('image')) chatBox.innerHTML+=`<div class="msg"><img src="${d.data}" style="max-width:140px;border-radius:10px"><br><a href="${d.data}" download="${d.name}" style="color:#25D366">Download</a></div><div style="clear:both"></div>`; else chatBox.innerHTML+=`<div class="msg">📁 ${d.name}<br><a href="${d.data}" download="${d.name}" style="color:#25D366">Download</a></div><div style="clear:both"></div>`; chatBox.scrollTop=chatBox.scrollHeight; });
-  socket.on('voice-message', d=>{ chatBox.innerHTML+=`<div class="msg"><audio controls src="${d.data}"></audio></div><div style="clear:both"></div>`; chatBox.scrollTop=chatBox.scrollHeight; });
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wajid Calling App</title>
+<style>
+body{font-family:Arial,sans-serif;margin:0;background:#0f172a;color:#fff;text-align:center}
+h1{margin:10px 0}
+#loginBox,#mainApp{max-width:500px;margin:20px auto;background:#1e293b;padding:20px;border-radius:12px}
+input{width:90%;padding:10px;margin:8px 0;border-radius:8px;border:0}
+button{padding:10px 18px;margin:5px;border:0;border-radius:8px;background:#25d366;color:#000;font-weight:bold;cursor:pointer}
+video{width:45%;background:#000;border-radius:10px;margin:5px}
+#chatBox{height:150px;overflow:auto;background:#0f172a;text-align:left;padding:10px;border-radius:8px;margin:10px 0}
+#incoming{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.95);z-index:999;flex-direction:column;justify-content:center;align-items:center}
+#mainApp{display:none}
+#settingsBox{display:none;position:fixed;top:20%;left:50%;transform:translateX(-50%);background:#fff;color:#000;padding:20px;border-radius:12px;z-index:1000}
+</style>
+</head>
+<body>
+<h1>Wajid Calling App</h1>
+<div id="loginBox">
+<h2>Login</h2>
+<input id="nameInput" placeholder="Name">
+<input id="emailInput" placeholder="Gmail">
+<input id="phoneInput" placeholder="Phone">
+<button onclick="sendOTP()">Send OTP</button>
+<div id="otpShow" style="margin:10px;font-size:20px;font-weight:bold"></div>
+<input id="otpInput" placeholder="Enter 6-digit OTP">
+<button onclick="verifyOTP()">Verify & Login</button>
+</div>
+<div id="mainApp">
+<h2 id="welcomeText">Welcome Wajid</h2>
+<input id="roomInput" value="123" placeholder="Room">
+<br>
+<button onclick="makeCall()">CALL</button>
+<button onclick="endCall()">END</button>
+<br>
+<video id="my" autoplay muted playsinline></video>
+<video id="other" autoplay playsinline></video>
+<p id="callStatus"></p>
+<div>
+<button onclick="toggleMic()">Mic</button>
+<button onclick="toggleVideo()">Off</button>
+<button onclick="shareScreen()">Screen</button>
+<button onclick="showSettings()">Setting</button>
+</div>
+<div id="chatBox"></div>
+<input id="chatInput" placeholder="Type message">
+<button onclick="sendChat()">Send</button>
+<br>
+<input type="file" id="fileInput" onchange="sendFile()">
+<button onclick="startVoice()">Voice Message</button>
+</div>
+<div id="incoming">
+<h2>Incoming Call</h2>
+<p id="incomingRoom"></p>
+<button onclick="acceptCall()">ACCEPT</button>
+<button onclick="rejectCall()">REJECT</button>
+</div>
+<div id="settingsBox">
+<h3>Settings</h3>
+<input id="newNameInput" placeholder="New Name">
+<button onclick="saveName()">Save</button>
+<button onclick="closeSettings()">Close</button>
+</div>
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let pc = null;
+let localStream = null;
+let currentRoom = "";
+let incomingRoom = "";
+let myName = localStorage.getItem('wajid_name') || "Wajid";
+let myEmail = localStorage.getItem('wajid_email') || "";
+let demoOTP = "";
+document.getElementById('nameInput').value = myName;
+document.getElementById('emailInput').value = myEmail;
+document.getElementById('welcomeText').innerText = "Welcome " + myName;
+function sendOTP(){
+demoOTP = Math.floor(100000 + Math.random()*900000).toString();
+document.getElementById('otpShow').innerText = "Your OTP: " + demoOTP;
+}
+function verifyOTP(){
+let otp = document.getElementById('otpInput').value;
+let name = document.getElementById('nameInput').value || "Wajid";
+let email = document.getElementById('emailInput').value || "";
+if(otp === demoOTP){
+localStorage.setItem('wajid_name', name);
+localStorage.setItem('wajid_email', email);
+myName = name; myEmail = email;
+document.getElementById('loginBox').style.display = 'none';
+document.getElementById('mainApp').style.display = 'block';
+document.getElementById('welcomeText').innerText = "Welcome " + myName;
+} else { alert("Wrong OTP"); }
+}
+if(localStorage.getItem('wajid_name')){
+document.getElementById('loginBox').style.display = 'none';
+document.getElementById('mainApp').style.display = 'block';
+}
+const servers = {iceServers:[{urls:"stun:stun.l.google.com:19302"},{urls:"turn:openrelay.metered.ca:80",username:"openrelayproject",credential:"openrelayproject"},{urls:"turn:openrelay.metered.ca:443",username:"openrelayproject",credential:"openrelayproject"}]};
+async function createPC(room){
+if(pc) return pc;
+pc = new RTCPeerConnection(servers);
+localStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+document.getElementById('my').srcObject = localStream;
+localStream.getTracks().forEach(t=>pc.addTrack(t, localStream));
+pc.ontrack = e => { document.getElementById('other').srcObject = e.streams[0]; };
+pc.onicecandidate = e => { if(e.candidate) socket.emit('ice-candidate', {roomId:room, candidate:e.candidate}); };
+return pc;
+}
+async function makeCall(){
+currentRoom = document.getElementById('roomInput').value || "123";
+document.getElementById('callStatus').innerText = "Calling...";
+socket.emit('join-room', currentRoom);
+socket.emit('call-user', {roomId:currentRoom, from:myName});
+await createPC(currentRoom);
+let offer = await pc.createOffer();
+await pc.setLocalDescription(offer);
+socket.emit('offer', {roomId:currentRoom, offer:offer});
+}
+function acceptCall(){
+currentRoom = incomingRoom;
+document.getElementById('incoming').style.display = 'none';
+document.getElementById('callStatus').innerText = "Connected";
+socket.emit('join-room', currentRoom);
+createPC(currentRoom);
+}
+function rejectCall(){
+document.getElementById('incoming').style.display = 'none';
+socket.emit('call-rejected', {roomId:incomingRoom});
+}
+function endCall(){
+if(pc){ pc.close(); pc=null; }
+document.getElementById('callStatus').innerText = "Call Ended";
+socket.emit('end-call', {roomId:currentRoom});
+}
+function toggleMic(){ if(localStream){ localStream.getAudioTracks().forEach(t=>t.enabled=!t.enabled); } }
+function toggleVideo(){ if(localStream){ localStream.getVideoTracks().forEach(t=>t.enabled=!t.enabled); } }
+async function shareScreen(){
+try{ let s = await navigator.mediaDevices.getDisplayMedia({video:true});
+let track = s.getVideoTracks()[0];
+let sender = pc.getSenders().find(x=>x.track && x.track.kind==='video');
+if(sender) sender.replaceTrack(track);
+} catch(e){ console.log(e); }
+}
+function showSettings(){ document.getElementById('settingsBox').style.display='block'; }
+function closeSettings(){ document.getElementById('settingsBox').style.display='none'; }
+function saveName(){
+let n = document.getElementById('newNameInput').value;
+if(n){ localStorage.setItem('wajid_name', n); myName=n; document.getElementById('welcomeText').innerText="Welcome "+n; }
+closeSettings();
+}
+function sendChat(){
+let msg = document.getElementById('chatInput').value;
+if(!msg) return;
+socket.emit('chat-message', {roomId:currentRoom, from:myName, msg:msg});
+addChat(myName+": "+msg);
+document.getElementById('chatInput').value="";
+}
+function addChat(text){
+let d = document.createElement('div'); d.innerText=text;
+document.getElementById('chatBox').appendChild(d);
+}
+function sendFile(){
+let f = document.getElementById('fileInput').files[0];
+if(!f) return;
+let r = new FileReader();
+r.onload = ()=>{ socket.emit('file-share', {roomId:currentRoom, from:myName, name:f.name, data:r.result}); addChat(myName+" sent photo: "+f.name); };
+r.readAsDataURL(f);
+}
+let mediaRecorder=null, chunks=[];
+function startVoice(){
+if(!localStream) return;
+if(mediaRecorder && mediaRecorder.state==='recording'){ mediaRecorder.stop(); return; }
+chunks=[]; mediaRecorder = new MediaRecorder(localStream);
+mediaRecorder.ondataavailable=e=>chunks.push(e.data);
+mediaRecorder.onstop=()=>{ let b=new Blob(chunks,{type:'audio/webm'}); let rd=new FileReader(); rd.onload=()=>socket.emit('voice-message',{roomId:currentRoom,from:myName,data:rd.result}); rd.readAsDataURL(b); };
+mediaRecorder.start(); alert("Recording... dobara dabao stop karne ke liye");
+}
+socket.on('user-connected', async roomId => {
+if(!pc) return;
+try{
+let offer = await pc.createOffer();
+await pc.setLocalDescription(offer);
+socket.emit('offer', {roomId:roomId, offer:offer});
+} catch(e){ console.log(e); }
+});
+socket.on('offer', async d => {
+if(!pc) await createPC(d.roomId);
+try{ await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
+let answer = await pc.createAnswer();
+await pc.setLocalDescription(answer);
+socket.emit('answer', {roomId:d.roomId, answer:answer});
+} catch(e){ console.log(e); }
+});
+socket.on('answer', async d => {
+if(!pc) return;
+try{ if(pc.signalingState==='have-local-offer'){ await pc.setRemoteDescription(new RTCSessionDescription(d.answer)); } } catch(e){ console.log(e); }
+});
+socket.on('ice-candidate', async d => {
+if(!pc) return;
+try{ await pc.addIceCandidate(new RTCIceCandidate(d.candidate)); } catch(e){ console.log(e); }
+});
+socket.on('incoming-call', d => {
+incomingRoom = d.roomId;
+document.getElementById('incomingRoom').innerText = "Room: " + d.roomId + " from " + (d.from||"");
+document.getElementById('incoming').style.display = 'flex';
+});
+socket.on('call-rejected', ()=>{ document.getElementById('callStatus').innerText="Call Rejected"; });
+socket.on('call-ended', ()=>{ document.getElementById('callStatus').innerText="Call Ended"; if(pc){pc.close(); pc=null;} });
+socket.on('chat-message', d => { addChat(d.from+": "+d.msg); });
+socket.on('file-share', d => {
+let a=document.createElement('a'); a.href=d.data; a.download=d.name; a.innerText=d.from+" sent: "+d.name;
+document.getElementById('chatBox').appendChild(a);
+document.getElementById('chatBox').appendChild(document.createElement('br'));
+});
+socket.on('voice-message', d => {
+let au=document.createElement('audio'); au.controls=true; au.src=d.data;
+document.getElementById('chatBox').appendChild(au);
+});
+</script>
+</body>
+</html>
