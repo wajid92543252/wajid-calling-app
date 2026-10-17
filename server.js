@@ -1,38 +1,27 @@
 const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const path = require('path');
-
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const http = require('http').createServer(app);
+const io = require('socket.io')(http, { cors: { origin: "*", maxHttpBufferSize: 1e8 } });
 
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(__dirname));
+app.get('/', (req,res)=> res.sendFile(__dirname + '/index.html'));
 
-app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'index.html'));
-});
-
-io.on('connection', (socket) => {
-  console.log('User connected:', socket.id);
-
-  socket.on('join-room', (roomId) => {
+io.on('connection', socket => {
+  socket.on('join-room', roomId => {
     socket.join(roomId);
-    socket.to(roomId).emit('user-connected', socket.id);
+    socket.to(roomId).emit('user-connected');
   });
+  socket.on('offer', d => socket.to(d.roomId).emit('offer', d));
+  socket.on('answer', d => socket.to(d.roomId).emit('answer', d));
+  socket.on('ice-candidate', d => socket.to(d.roomId).emit('ice-candidate', d));
+  
+  socket.on('call-user', d => socket.to(d.roomId).emit('incoming-call', d));
+  socket.on('call-rejected', d => socket.to(d.roomId).emit('call-rejected'));
+  socket.on('end-call', d => socket.to(d.roomId).emit('call-ended'));
 
-  socket.on('offer', data => {
-    socket.to(data.roomId).emit('offer', data);
-  });
-
-  socket.on('answer', data => {
-    socket.to(data.roomId).emit('answer', data);
-  });
-
-  socket.on('ice-candidate', data => {
-    socket.to(data.roomId).emit('ice-candidate', data);
-  });
+  socket.on('chat-message', d => io.to(d.roomId).emit('chat-message', d));
+  socket.on('file-share', d => io.to(d.roomId).emit('file-share', d));
+  socket.on('voice-message', d => io.to(d.roomId).emit('voice-message', d));
 });
 
-const PORT = process.env.PORT || 10000;
-server.listen(PORT, () => console.log('Server chal raha hai'));
+http.listen(process.env.PORT || 3000, ()=> console.log('Full App Running'));
