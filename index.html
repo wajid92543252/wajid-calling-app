@@ -62,6 +62,14 @@ video{width:45%;background:#000;border-radius:10px;margin:5px}
 <h3>Settings</h3>
 <input id="newNameInput" placeholder="New Name">
 <button onclick="saveName()">Save</button>
+<p>Dial Tune</p>
+<select id="tuneSelect" style="width:90%;padding:10px;margin:8px 0;border-radius:8px">
+<option value="nokia">Nokia Tune</option>
+<option value="beep">Simple Beep</option>
+<option value="off">Tune Off</option>
+</select>
+<button onclick="saveTune()">Save Tune</button>
+<br>
 <button onclick="closeSettings()">Close</button>
 </div>
 <script src="/socket.io/socket.io.js"></script>
@@ -77,6 +85,7 @@ let demoOTP = "";
 document.getElementById('nameInput').value = myName;
 document.getElementById('emailInput').value = myEmail;
 document.getElementById('welcomeText').innerText = "Welcome " + myName;
+document.getElementById('tuneSelect').value = localStorage.getItem('wajid_tune') || "nokia";
 function sendOTP(){
 demoOTP = Math.floor(100000 + Math.random()*900000).toString();
 document.getElementById('otpShow').innerText = "Your OTP: " + demoOTP;
@@ -148,6 +157,12 @@ let n = document.getElementById('newNameInput').value;
 if(n){ localStorage.setItem('wajid_name', n); myName=n; document.getElementById('welcomeText').innerText="Welcome "+n; }
 closeSettings();
 }
+function saveTune(){
+let t = document.getElementById('tuneSelect').value;
+localStorage.setItem('wajid_tune', t);
+alert("Tune save: " + t);
+closeSettings();
+}
 function sendChat(){
 let msg = document.getElementById('chatInput').value;
 if(!msg) return;
@@ -182,7 +197,7 @@ let offer = await pc.createOffer();
 await pc.setLocalDescription(offer);
 socket.emit('offer', {roomId:roomId, offer:offer});
 } catch(e){ console.log(e); }
-}); 
+});
 socket.on('offer', async d => {
 if(!pc) await createPC(d.roomId);
 try{ await pc.setRemoteDescription(new RTCSessionDescription(d.offer));
@@ -215,10 +230,11 @@ document.getElementById('chatBox').appendChild(document.createElement('br'));
 socket.on('voice-message', d => {
 let au=document.createElement('audio'); au.controls=true; au.src=d.data;
 document.getElementById('chatBox').appendChild(au);
+});
 let ringCtx=null, ringTimer=null, ringTimeouts=[];
 function beep(f,d){ if(!ringCtx) return; let o=ringCtx.createOscillator(), g=ringCtx.createGain(); o.frequency.value=f; g.gain.value=0.15; o.connect(g); g.connect(ringCtx.destination); o.start(); setTimeout(()=>{try{o.stop()}catch(e){}},d*1000); }
 function playNokia(){ let notes=[[1319,0,.18],[1175,.18,.18],[740,.36,.18],[831,.54,.18],[1109,.72,.18],[988,.90,.18],[587,1.08,.18],[659,1.26,.18],[988,1.44,.18],[880,1.62,.18],[554,1.80,.18],[659,1.98,.18],[880,2.16,.5]]; notes.forEach(n=>{ ringTimeouts.push(setTimeout(()=>beep(n[0],n[2]),n[1]*1000)); }); }
-function startRing(){ stopRing(); try{ ringCtx=new (window.AudioContext||window.webkitAudioContext)(); if(ringCtx.state==='suspended') ringCtx.resume(); playNokia(); ringTimer=setInterval(playNokia,3200); }catch(e){} }
+function startRing(){ stopRing(); let tune=localStorage.getItem('wajid_tune')||'nokia'; if(tune==='off') return; try{ ringCtx=new (window.AudioContext||window.webkitAudioContext)(); if(ringCtx.state==='suspended') ringCtx.resume(); if(tune==='beep'){ beep(440,1); ringTimer=setInterval(()=>beep(440,1),3000); } else { playNokia(); ringTimer=setInterval(playNokia,3200); } }catch(e){} }
 function stopRing(){ if(ringTimer){ clearInterval(ringTimer); ringTimer=null; } ringTimeouts.forEach(t=>clearTimeout(t)); ringTimeouts=[]; if(ringCtx){ try{ringCtx.close()}catch(e){} ringCtx=null; } }
 socket.on('incoming-call', ()=>{ startRing(); });
 socket.on('call-ended', ()=>{ stopRing(); });
